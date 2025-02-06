@@ -44,19 +44,19 @@ pico_set_program_version(DisplayC "0.1")
 pico_enable_stdio_uart(DisplayC 1)
 pico_enable_stdio_usb(DisplayC 1)
 
+pico_generate_pio_header(DisplayC ${CMAKE_CURRENT_LIST_DIR}/DisplayC.pio OUTPUT_DIR ${CMAKE_CURRENT_LIST_DIR}/generated)
+
+target_sources(DisplayC PRIVATE DisplayC.c)
 # Add the standard library to the build
 target_link_libraries(DisplayC
-        pico_stdlib)
+        pico_stdlib
+        hardware_i2c
+        hardware_pio)
 
 # Add the standard include files to the build
 target_include_directories(DisplayC PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}
 )
-
-# Add any user requested libraries
-target_link_libraries(DisplayC 
-        hardware_i2c
-        )
 
 pico_add_extra_outputs(DisplayC)
 

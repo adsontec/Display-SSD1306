@@ -4,6 +4,9 @@
 #include "hardware/i2c.h"
 #include "inc/ssd1306.h"
 #include "inc/font.h"
+#include "hardware/pio.h"
+#include "hardware/clocks.h"
+#include "DisplayC.pio.h"
 
 // Define o Pinos GPIO
 #define GPIO_R_LED 13
@@ -15,6 +18,8 @@
 #define I2C_SDA 14
 #define I2C_SCL 15
 #define endereco 0x3C
+#define NUM_PIXELS 25
+#define OUT_PIN 7
 
 // Conexão dos pinos GPIO
 const uint8_t GPIOs[] = {GPIO_R_LED, GPIO_B_LED, GPIO_G_LED, BUTTON_A, BUTTON_B};
@@ -24,12 +29,19 @@ volatile absolute_time_t last_press_time = 0;
 ssd1306_t ssd; 
 bool cor = true;
 
+PIO pio;
+uint sm;
+
+double numeros[11][5][5] = {{{0.0, 0.0, 0.0, 0.0, 0.0},{0.0, 0.0, 0.0, 0.0, 0.0},{0.0, 0.0, 0.0, 0.0, 0.0},{0.0, 0.0, 0.0, 0.0, 0.0},{0.0, 0.0, 0.0, 0.0, 0.0},},{{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 1.0, 0.0, 1.0, 0.0},{0.0, 1.0, 0.0, 1.0, 0.0},{0.0, 1.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},},{{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 0.0, 1.0, 0.0, 0.0},{0.0, 0.0, 1.0, 0.0, 0.0},{0.0, 1.0, 1.0, 0.0, 0.0},{0.0, 0.0, 1.0, 0.0, 0.0},},{{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 1.0, 0.0, 0.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 0.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},},{{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 0.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 0.0, 0.0},{0.0, 0.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},},{{0.0, 1.0, 0.0, 0.0, 0.0},{0.0, 0.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 1.0, 0.0, 1.0, 0.0},{0.0, 1.0, 0.0, 1.0, 0.0},},{{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 0.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 1.0, 0.0, 0.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},},{{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 1.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 1.0, 0.0, 0.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},},{{0.0, 1.0, 0.0, 0.0, 0.0},{0.0, 0.0, 0.0, 1.0, 0.0},{0.0, 1.0, 0.0, 0.0, 0.0},{0.0, 0.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},},{{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 1.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 1.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},},{{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 0.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},{0.0, 1.0, 0.0, 1.0, 0.0},{0.0, 1.0, 1.0, 1.0, 0.0},},};
+
 // Protótipo de Função
 void inicializar_GPIOs();
 void init_gpio();
 void init_display();
 void ssd1306();
 void gpio_irq_handler(uint gpio, uint32_t events);
+uint32_t matriz_rgb(double r, double g, double b);
+void atualizar_matriz_leds(PIO pio, uint sm, int current_pattern);
 
 int main(){
   stdio_init_all();
@@ -38,10 +50,20 @@ int main(){
   init_gpio();
   init_display();
 
+  void numero(PIO pio, uint sm);
+
+  pio = pio0;
+    
+  uint offset = pio_add_program(pio, &pio_matrix_program);
+  sm = pio_claim_unused_sm(pio, true);
+  pio_matriz_program_init(pio, sm, offset, OUT_PIN);
+
   // Configuração da interrupção com callback
   gpio_set_irq_enabled_with_callback(BUTTON_A, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
   gpio_set_irq_enabled_with_callback(BUTTON_B, GPIO_IRQ_EDGE_FALL, true, &gpio_irq_handler);
   printf("RP2040 inicializado\n");
+
+  atualizar_matriz_leds(pio, sm, 0);
   
   while (true){
     if(stdio_usb_connected()) {
@@ -54,7 +76,41 @@ int main(){
             ssd1306_rect(&ssd, 3, 3, 122, 58, cor, !cor); // Desenha um retângulo na tela
             ssd1306_draw_string(&ssd, "INSIRA O DADO", 8, 10); // Exibe mensagens no display
             ssd1306_draw_string(&ssd, texto, 20, 30); // Exibe o caractere digitado
-            ssd1306_send_data(&ssd); // Atualiza o display com os novos dados
+            ssd1306_send_data(&ssd); // Atualiza o display com os novos dados    
+
+            printf("Recebido: %c\n", c);
+            switch (c) {
+              case '0':
+                atualizar_matriz_leds(pio, sm, 1);
+              break;
+              case '1':
+                atualizar_matriz_leds(pio, sm, 2);
+              break;
+              case '2':
+                atualizar_matriz_leds(pio, sm, 3);
+              break;
+              case '3':
+                atualizar_matriz_leds(pio, sm, 4);
+              break;
+              case '4':
+                atualizar_matriz_leds(pio, sm, 5);
+              break;
+              case '5':
+                atualizar_matriz_leds(pio, sm, 6);
+              break;
+              case '6':
+                atualizar_matriz_leds(pio, sm, 7);
+              break;
+              case '7':
+                atualizar_matriz_leds(pio, sm, 8);
+              break;
+              case '8':
+                atualizar_matriz_leds(pio, sm, 9);
+              break;
+              case '9':
+                atualizar_matriz_leds(pio, sm, 10);
+              break;
+            }
         }
     }
     sleep_ms(40);
@@ -120,5 +176,20 @@ void gpio_irq_handler(uint gpio, uint32_t events){
         }
     }else if (!btn_pressed){
         btn_last_state = 0;
+    }
+}
+
+// Função que returna a cor com base nos parâmetros fornecidos
+uint32_t matriz_rgb(double r, double g, double b){
+    return ((uint8_t)(g * 255) << 24) | ((uint8_t)(r * 255) << 16) | ((uint8_t)(b * 255) << 8);
+}
+
+// Função para atualizar a matriz de LEDs
+void atualizar_matriz_leds(PIO pio, uint sm, int current_pattern){
+    for (int j = 0; j < 5; j++){
+        for (int k = 0; k < 5; k++){
+            uint32_t cor = matriz_rgb(0, 0, numeros[current_pattern][j][k]);
+            pio_sm_put_blocking(pio, sm, cor);
+        }
     }
 }
